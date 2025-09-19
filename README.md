@@ -4,7 +4,7 @@ It's what it says in the title, it basically "pipes" what you're playing in MPD 
 # Dependencies
 1. Go, duh
 2. MPD, duh
-3. [gompd module](https://github.com/fhs/gompd/v2/mpd)
+3. [gompd module](https://github.com/fhs/gompd)
 4. [discord-rpc module](https://github.com/rikkuness/discord-rpc)
 
 # Usage
