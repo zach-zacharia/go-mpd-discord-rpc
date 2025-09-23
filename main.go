@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"github.com/rikkuness/discord-rpc"
 )
 
-// MPDWrapper keeps a live MPD client and reconnects if needed
 type MPDWrapper struct {
 	Client *mpd.Client
 }
@@ -18,7 +18,6 @@ func NewMPDWrapper() *MPDWrapper {
 	return &MPDWrapper{Client: getMPDConn()}
 }
 
-// Status safely fetches the status, reconnecting if the connection is dead
 func (m *MPDWrapper) Status() (mpd.Attrs, error) {
 	if m.Client == nil {
 		m.Client = getMPDConn()
@@ -33,7 +32,6 @@ func (m *MPDWrapper) Status() (mpd.Attrs, error) {
 	return status, err
 }
 
-// CurrentSong safely fetches the current song
 func (m *MPDWrapper) CurrentSong() (mpd.Attrs, error) {
 	if m.Client == nil {
 		m.Client = getMPDConn()
@@ -48,7 +46,6 @@ func (m *MPDWrapper) CurrentSong() (mpd.Attrs, error) {
 	return song, err
 }
 
-// getMPDConn establishes a new MPD connection
 func getMPDConn() *mpd.Client {
 	for {
 		conn, err := mpd.Dial("tcp", "localhost:6600")
@@ -61,7 +58,6 @@ func getMPDConn() *mpd.Client {
 	}
 }
 
-// updateActivity fetches MPD info and sets Discord activity
 func updateActivity(rpc *discordrpc.Client, mpdClient *MPDWrapper) {
 	status, err := mpdClient.Status()
 	if err != nil {
@@ -81,28 +77,50 @@ func updateActivity(rpc *discordrpc.Client, mpdClient *MPDWrapper) {
 	start := now.Add(-time.Duration(elapsed) * time.Second)
 	end := start.Add(time.Duration(duration) * time.Second)
 
-	activity := discordrpc.Activity{
-		Details: trimForDiscord(song["Title"], 128),
-		State:   trimForDiscord(song["Artist"], 128),
-		Assets: &discordrpc.Assets{
-			LargeImage: "cover_art",
-			LargeText:  "",
-		},
-		Timestamps: &discordrpc.Timestamps{
-			Start: &discordrpc.Epoch{Time: start},
-			End:   &discordrpc.Epoch{Time: end},
-		},
-		Type: 2,
+	if status["state"] == "stop" {
+		activity := discordrpc.Activity{
+			Details: "Idling",
+			Assets: &discordrpc.Assets{
+				LargeImage: "largeimage",
+				LargeText:  "Not listening anything",
+			},
+			Timestamps: &discordrpc.Timestamps{
+				Start: &discordrpc.Epoch{Time: start},
+				End:   &discordrpc.Epoch{Time: end},
+			},
+			Type: 2,
+		}
+
+		if err := rpc.SetActivity(activity); err != nil {
+			log.Println("Could not set activity:", err)
+		} else {
+			fmt.Println("Updated activity:", song["Title"], "-", song["Artist"])
+		}
+
+	} else {
+		activity := discordrpc.Activity{
+			Details: trimForDiscord(song["Title"], 128),
+			State:   trimForDiscord(song["Artist"], 128),
+			Assets: &discordrpc.Assets{
+				LargeImage: "largeimage",
+				LargeText:  trimForDiscord(song["Album"], 128),
+			},
+			Timestamps: &discordrpc.Timestamps{
+				Start: &discordrpc.Epoch{Time: start},
+				End:   &discordrpc.Epoch{Time: end},
+			},
+			Type: 2,
+		}
+
+		if err := rpc.SetActivity(activity); err != nil {
+			log.Println("Could not set activity:", err)
+		} else {
+			fmt.Println("Updated activity:", song["Title"], "-", song["Artist"])
+		}
 	}
 
-	if err := rpc.SetActivity(activity); err != nil {
-		log.Println("Could not set activity:", err)
-	} else {
-		log.Println("Updated activity:", song["Title"], "-", song["Artist"])
-	}
 }
 
-// trimForDiscord ensures strings are under Discord's 128 character limit
 func trimForDiscord(s string, max int) string {
 	if len(s) > max {
 		if max > 3 {
@@ -126,7 +144,8 @@ func main() {
 	mpdClient := NewMPDWrapper()
 	log.Println("Connected to MPD!")
 
-	// Watcher goroutine
+	updateActivity(rpc, mpdClient)
+
 	go func() {
 		for {
 			w, err := mpd.NewWatcher("tcp", ":6600", "")
@@ -146,5 +165,5 @@ func main() {
 		}
 	}()
 
-	select {} // keep program alive indefinitely
+	select {}
 }
